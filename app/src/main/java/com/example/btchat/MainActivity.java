@@ -25,26 +25,24 @@ import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
 
-    Button listen,send, listDevices;
+    Button listen,send, listDevices, stop;
     ListView listView;
-    TextView msg_box,status;
+    TextView msg_box;
     EditText writeMsg;
 
     BluetoothAdapter bluetoothAdapter;
     BluetoothDevice[] btArray;
 
     SendReceive sendReceive;
+    ClientClass clientClass;
 
-    static final int STATE_LISTENING = 1;
-    static final int STATE_CONNECTING=2;
-    static final int STATE_CONNECTED=3;
-    static final int STATE_CONNECTION_FAILED=4;
     static final int STATE_MESSAGE_RECEIVED=5;
 
     int REQUEST_ENABLE_BLUETOOTH=1;
+    boolean clientRunning = true;
 
-    private static final String APP_NAME = "BTChat";
-    private static final UUID MY_UUID=UUID.fromString("8ce255c0-223a-11e0-ac64-0803450c9a66");
+    private static final String APP_NAME = "MiMi";
+    private static final UUID MY_UUID=UUID.fromString("aa9036b7-186f-4e96-81d5-25f1b5bf1ab7");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,10 +96,9 @@ public class MainActivity extends AppCompatActivity {
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int i, long l) {
-                ClientClass clientClass=new ClientClass(btArray[i]);
+                clientClass = new ClientClass(btArray[i]);
                 clientClass.start();
-
-                status.setText("Connecting");
+                clientRunning = true;
             }
         });
 
@@ -112,6 +109,14 @@ public class MainActivity extends AppCompatActivity {
                 sendReceive.write(string.getBytes());
             }
         });
+
+        stop.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                clientRunning = false;
+//                clientClass.interrupt();
+            }
+        });
     }
 
     Handler handler=new Handler(new Handler.Callback() {
@@ -120,21 +125,10 @@ public class MainActivity extends AppCompatActivity {
 
             switch (msg.what)
             {
-                case STATE_LISTENING:
-                    status.setText("Listening");
-                    break;
-                case STATE_CONNECTING:
-                    status.setText("Connecting");
-                    break;
-                case STATE_CONNECTED:
-                    status.setText("Connected");
-                    break;
-                case STATE_CONNECTION_FAILED:
-                    status.setText("Connection Failed");
-                    break;
                 case STATE_MESSAGE_RECEIVED:
                     byte[] readBuff= (byte[]) msg.obj;
                     String tempMsg=new String(readBuff,0,msg.arg1);
+
                     msg_box.setText(tempMsg);
                     break;
             }
@@ -147,7 +141,7 @@ public class MainActivity extends AppCompatActivity {
         send=(Button) findViewById(R.id.send);
         listView=(ListView) findViewById(R.id.listview);
         msg_box =(TextView) findViewById(R.id.msg);
-        status=(TextView) findViewById(R.id.status);
+        stop=(Button) findViewById(R.id.stop);
         writeMsg=(EditText) findViewById(R.id.writemsg);
         listDevices=(Button) findViewById(R.id.listDevices);
     }
@@ -155,7 +149,6 @@ public class MainActivity extends AppCompatActivity {
     private class ServerClass extends Thread
     {
         private BluetoothServerSocket serverSocket;
-
         public ServerClass(){
             try {
                 serverSocket=bluetoothAdapter.listenUsingRfcommWithServiceRecord(APP_NAME,MY_UUID);
@@ -163,35 +156,21 @@ public class MainActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         }
-
         public void run()
         {
             BluetoothSocket socket=null;
-
             while (socket==null)
             {
                 try {
-                    Message message=Message.obtain();
-                    message.what=STATE_CONNECTING;
-                    handler.sendMessage(message);
-
                     socket=serverSocket.accept();
                 } catch (IOException e) {
                     e.printStackTrace();
-                    Message message=Message.obtain();
-                    message.what=STATE_CONNECTION_FAILED;
-                    handler.sendMessage(message);
                 }
 
                 if(socket!=null)
                 {
-                    Message message=Message.obtain();
-                    message.what=STATE_CONNECTED;
-                    handler.sendMessage(message);
-
                     sendReceive=new SendReceive(socket);
                     sendReceive.start();
-
                     break;
                 }
             }
@@ -218,18 +197,17 @@ public class MainActivity extends AppCompatActivity {
         {
             try {
                 socket.connect();
-                Message message=Message.obtain();
-                message.what=STATE_CONNECTED;
-                handler.sendMessage(message);
-
                 sendReceive=new SendReceive(socket);
                 sendReceive.start();
+                if (!clientRunning){
+                    Thread.interrupted();
+                }
+
+
 
             } catch (IOException e) {
                 e.printStackTrace();
-                Message message=Message.obtain();
-                message.what=STATE_CONNECTION_FAILED;
-                handler.sendMessage(message);
+
             }
         }
     }
@@ -266,6 +244,7 @@ public class MainActivity extends AppCompatActivity {
             {
                 try {
                     bytes=inputStream.read(buffer);
+                    //send
                     handler.obtainMessage(STATE_MESSAGE_RECEIVED,bytes,-1,buffer).sendToTarget();
                 } catch (IOException e) {
                     e.printStackTrace();
